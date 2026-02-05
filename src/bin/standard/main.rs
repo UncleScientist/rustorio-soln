@@ -6,9 +6,9 @@ use rustorio::{
     self, Bundle, HandRecipe, Resource, Tick,
     buildings::{Assembler, Furnace},
     gamemodes::{Standard, StandardStartingResources},
-    recipes::{AssemblerRecipe, CopperSmelting, CopperWireRecipe, IronSmelting},
+    recipes::{CopperSmelting, CopperWireRecipe, ElectronicCircuitRecipe, IronSmelting},
     research::SteelTechnology,
-    resources::{Copper, CopperOre, CopperWire, Iron, IronOre, Point},
+    resources::{Copper, CopperOre, Iron, IronOre, Point},
 };
 
 use crate::smelter::Smeltable;
@@ -248,18 +248,60 @@ impl Solver {
             .expect("can't bundle 10 iron");
         self.copper_furnace = Some(Furnace::build(&self.tick, CopperSmelting, iron));
 
-        let iron = self
+        let mut iron = self
             .iron
             .retrieve_product(10, &mut self.tick, &mut self.iron_furnace);
+        let mut copper = self
+            .copper
+            .retrieve_product(6, &mut self.tick, &mut self.copper_furnace);
+
+        let mut copper_wire_resource = Resource::new_empty();
+        while let Ok(mut copper) = copper.split_off(1) {
+            let copper = copper.bundle().expect("needed 1 copper");
+            copper_wire_resource += CopperWireRecipe::craft(&mut self.tick, (copper,)).0;
+        }
+
+        let mut copper_wire_assembler = Assembler::build(
+            &self.tick,
+            CopperWireRecipe,
+            copper_wire_resource
+                .bundle()
+                .expect("couldn't convert copper wire resource to bundle"),
+            iron.bundle()
+                .expect("couldn't convert iron resource to bundle"),
+        );
+
         let copper = self
             .copper
             .retrieve_product(6, &mut self.tick, &mut self.copper_furnace);
-        let copper_wire_assembler =
-            Factory::<CopperWireRecipe>::build_copper_wire_assembler(&mut self.tick, copper, iron);
-        println!("{copper_wire_assembler:?}");
+
+        copper_wire_assembler.inputs(&self.tick).0.add(copper);
+        self.tick.advance_until(
+            |tick| copper_wire_assembler.outputs(tick).0.amount() >= 12,
+            1_000_000,
+        );
+        let copper_wire = copper_wire_assembler
+            .outputs(&self.tick)
+            .0
+            .bundle::<12>()
+            .expect("copper wire");
+
+        let iron = self
+            .iron
+            .retrieve_product(6, &mut self.tick, &mut self.iron_furnace)
+            .bundle()
+            .expect("couldn't bundle iron");
+
+        let electronic_circuit_assembler =
+            Assembler::build(&self.tick, ElectronicCircuitRecipe, copper_wire, iron);
+        println!("{electronic_circuit_assembler:?}");
 
         todo!()
     }
+
+    // TODO:
+    // fn generate_assembler<R: AssemblerRecipe>() -> Self {}
+    //
 
     /*
     fn handmade_red_science(
@@ -283,45 +325,4 @@ impl Solver {
         }
     }
     */
-}
-
-#[derive(Debug)]
-struct Factory<R: AssemblerRecipe> {
-    _assembler: Assembler<R>,
-}
-
-impl<R: AssemblerRecipe> Factory<R> {
-    fn _new(
-        tick: &Tick,
-        copper_wires: Bundle<CopperWire, 12>,
-        iron: Bundle<Iron, 6>,
-        recipe: R,
-    ) -> Self {
-        Self {
-            _assembler: Assembler::build(tick, recipe, copper_wires, iron),
-        }
-    }
-
-    fn build_copper_wire_assembler(
-        tick: &mut Tick,
-        mut copper: Resource<Copper>,
-        mut iron: Resource<Iron>,
-    ) -> Factory<CopperWireRecipe> {
-        let mut copper_wire_resource = Resource::new_empty();
-        while let Ok(mut copper) = copper.split_off(1) {
-            let copper = copper.bundle().expect("needed 1 copper");
-            copper_wire_resource += CopperWireRecipe::craft(tick, (copper,)).0;
-        }
-        let iron_bundle = iron.bundle::<6>().expect("bundle");
-        Factory::<CopperWireRecipe> {
-            _assembler: Assembler::build(
-                tick,
-                CopperWireRecipe,
-                copper_wire_resource
-                    .bundle()
-                    .expect("couldn't convert resource to bundle"),
-                iron_bundle,
-            ),
-        }
-    }
 }
