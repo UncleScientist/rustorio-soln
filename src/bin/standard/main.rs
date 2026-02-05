@@ -1,19 +1,17 @@
 #![forbid(unsafe_code)]
 
-use std::marker::PhantomData;
+mod smelter;
 
 use rustorio::{
-    self, Bundle, HandRecipe, Resource, ResourceType, Technology, Tick,
-    buildings::{Assembler, Furnace, Lab},
+    self, Bundle, HandRecipe, Resource, Tick,
+    buildings::Furnace,
     gamemodes::{Standard, StandardStartingResources},
-    recipes::{
-        CopperSmelting, CopperWireRecipe, ElectronicCircuitRecipe, FurnaceRecipe, IronSmelting,
-        RedScienceRecipe,
-    },
-    research::{RedScience, SteelTechnology},
-    resources::{Copper, CopperOre, CopperWire, ElectronicCircuit, Iron, IronOre, Point},
-    territory::Territory,
+    recipes::{CopperSmelting, CopperWireRecipe, IronSmelting},
+    research::SteelTechnology,
+    resources::{Copper, CopperOre, CopperWire, Iron, IronOre, Point},
 };
+
+use crate::smelter::Smeltable;
 
 type GameMode = Standard;
 
@@ -23,7 +21,7 @@ fn main() {
     rustorio::play::<GameMode>(user_main);
 }
 
-fn user_main(mut tick: Tick, starting_resources: StartingResources) -> (Tick, Bundle<Point, 200>) {
+fn user_main(tick: Tick, starting_resources: StartingResources) -> (Tick, Bundle<Point, 200>) {
     let mut solver = Solver::new(tick, starting_resources);
     solver.solve()
 }
@@ -201,7 +199,7 @@ fn user_main(mut tick: Tick, starting_resources: StartingResources) -> (Tick, Bu
 
 struct Solver {
     tick: Tick,
-    steel_technology: SteelTechnology,
+    _steel_technology: SteelTechnology,
 
     iron: Smeltable<IronOre, Iron, IronSmelting>,
     iron_furnace: Option<Furnace<IronSmelting>>,
@@ -228,7 +226,7 @@ impl Solver {
         Self {
             tick,
             iron: iron_smelter,
-            steel_technology,
+            _steel_technology: steel_technology,
             copper: copper_smelter,
             iron_furnace: None,
             copper_furnace: None,
@@ -241,14 +239,14 @@ impl Solver {
             .retrieve_product::<Furnace<IronSmelting>>(10, &mut self.tick, &mut None)
             .bundle::<10>()
             .expect("couldn't get iron");
-        self.iron_furnace = Some(Furnace::build(&mut self.tick, IronSmelting, iron));
+        self.iron_furnace = Some(Furnace::build(&self.tick, IronSmelting, iron));
 
         let iron = self
             .iron
             .retrieve_product(10, &mut self.tick, &mut self.iron_furnace)
             .bundle::<10>()
             .expect("can't bundle 10 iron");
-        self.copper_furnace = Some(Furnace::build(&mut self.tick, CopperSmelting, iron));
+        self.copper_furnace = Some(Furnace::build(&self.tick, CopperSmelting, iron));
 
         let copper = self
             .copper
@@ -268,6 +266,7 @@ impl Solver {
         copper_wire_resource
     }
 
+    /*
     fn handmade_red_science(
         tick: &mut Tick,
         mut iron_resource: Resource<Iron>,
@@ -288,120 +287,5 @@ impl Solver {
             resource += RedScienceRecipe::craft(tick, (iron, electronic_circuit)).0;
         }
     }
-}
-
-struct Smeltable<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe> {
-    territory: Territory<Ore>,
-    ore: Resource<Ore>,
-    product: Resource<Product>,
-    _data: PhantomData<Recipe>,
-}
-
-impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe>
-    Smeltable<Ore, Product, Recipe>
-{
-    fn acquire_ore<const AMOUNT: u32>(&mut self, tick: &mut Tick) -> Bundle<Ore, AMOUNT> {
-        self.territory.hand_mine::<AMOUNT>(tick)
-    }
-
-    fn mine(&mut self, amount: u32, tick: &mut Tick) {
-        let mined = match amount {
-            1 => self.acquire_ore::<1>(tick).to_resource(),
-            2 => self.acquire_ore::<2>(tick).to_resource(),
-            4 => self.acquire_ore::<4>(tick).to_resource(),
-            8 => self.acquire_ore::<8>(tick).to_resource(),
-            16 => self.acquire_ore::<16>(tick).to_resource(),
-            32 => self.acquire_ore::<32>(tick).to_resource(),
-            64 => self.acquire_ore::<64>(tick).to_resource(),
-            128 => self.acquire_ore::<128>(tick).to_resource(),
-            x if x.is_multiple_of(2) => {
-                self.acquire_ore_resource(x / 2, tick) + self.acquire_ore_resource(x / 2, tick)
-            }
-            x => self.acquire_ore_resource(1, tick) + self.acquire_ore_resource(x - 1, tick),
-        };
-        self.ore.add(mined);
-    }
-
-    fn smelt_ore<S: Smelter<Ore, Product, Recipe>>(
-        &mut self,
-        ore: Resource<Ore>,
-        tick: &mut Tick,
-        smelter: &mut S,
-    ) {
-        let amount = ore.amount();
-        smelter.add_resource(ore, tick);
-        self.product += smelter.smelt(amount, tick);
-    }
-
-    fn retrieve_product<S: Smelter<Ore, Product, Recipe>>(
-        &mut self,
-        amount: u32,
-        tick: &mut Tick,
-        smelter: &mut Option<S>,
-    ) -> Resource<Product> {
-        let have = self.product.amount();
-        if have < amount {
-            let remaining = self.acquire_ore_resource(amount - have, tick);
-            self.smelt_ore(remaining, tick, smelter.as_mut().expect("smelter"));
-        }
-        self.product
-            .split_off(amount)
-            .expect("should have had enough iron")
-    }
-
-    fn acquire_ore_resource(&mut self, amount: u32, tick: &mut Tick) -> Resource<Ore> {
-        let have = self.ore.amount();
-        if have < amount {
-            self.mine(amount - have, tick);
-        }
-        self.ore
-            .split_off(amount)
-            .expect("should have had enough resource")
-    }
-
-    fn new(territory: Territory<Ore>, initial_amount: Resource<Product>) -> Self {
-        Self {
-            territory,
-            ore: Resource::new_empty(),
-            product: initial_amount,
-            _data: PhantomData::default(),
-        }
-    }
-}
-
-trait Smelter<Ore: ResourceType, Product: ResourceType, R: FurnaceRecipe> {
-    fn add_resource(&mut self, resource: Resource<Ore>, tick: &mut Tick);
-    fn smelt(&mut self, amount: u32, tick: &mut Tick) -> Resource<Product>;
-}
-
-impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe> Smelter<Ore, Product, Recipe>
-    for Furnace<IronSmelting>
-where
-    Resource<IronOre>: From<Resource<Ore>>,
-    Resource<Product>: From<Resource<Iron>>,
-{
-    fn add_resource(&mut self, resource: Resource<Ore>, tick: &mut Tick) {
-        self.inputs(&tick).0.add(resource)
-    }
-
-    fn smelt(&mut self, amount: u32, tick: &mut Tick) -> Resource<Product> {
-        tick.advance_until(|tick| self.outputs(tick).0.amount() > amount, 1_000_000);
-        self.outputs(&tick).0.split_off_max(amount).into()
-    }
-}
-
-impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe> Smelter<Ore, Product, Recipe>
-    for Furnace<CopperSmelting>
-where
-    Resource<CopperOre>: From<Resource<Ore>>,
-    Resource<Product>: From<Resource<Copper>>,
-{
-    fn add_resource(&mut self, resource: Resource<Ore>, tick: &mut Tick) {
-        self.inputs(&tick).0.add(resource)
-    }
-
-    fn smelt(&mut self, amount: u32, tick: &mut Tick) -> Resource<Product> {
-        tick.advance_until(|tick| self.outputs(tick).0.amount() > amount, 1_000_000);
-        self.outputs(&tick).0.split_off_max(amount).into()
-    }
+    */
 }
