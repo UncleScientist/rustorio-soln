@@ -70,7 +70,7 @@ impl Solver {
         }
     }
 
-    fn solve(mut self) -> (Tick, Bundle<Point, 200>) {
+    fn solve<const AMOUNT: u32>(mut self) -> (Tick, Bundle<Point, AMOUNT>) {
         let iron = self
             .iron
             .retrieve_product::<Furnace<IronSmelting>>(10, &mut self.tick, &mut None)
@@ -127,7 +127,7 @@ impl Solver {
             .0
             .add(
                 self.iron
-                    .retrieve_product(1000, &mut self.tick, &mut self.iron_furnace),
+                    .retrieve_product(5 * AMOUNT, &mut self.tick, &mut self.iron_furnace),
             );
         self.tick
             .advance_until(|tick| steel_smelter.inputs(tick).0.amount() == 0, 1_000_000);
@@ -137,6 +137,7 @@ impl Solver {
             .iron
             .retrieve_product(50, &mut self.tick, &mut self.iron_furnace);
         let circuits = self.make_circuits(50);
+
         red_science_assembler.inputs(&self.tick).0.add(iron);
         red_science_assembler.inputs(&self.tick).1.add(circuits);
         self.tick.advance_until(
@@ -158,7 +159,7 @@ impl Solver {
             .expect("points tech");
         let point_recipe = points_technology.research(points_tech);
 
-        let circuits = self.make_circuits(800);
+        let circuits = self.make_circuits(4 * AMOUNT);
 
         let mut point_assembler = self.generate_assembler(point_recipe);
         point_assembler.inputs(&self.tick).0.add(circuits);
