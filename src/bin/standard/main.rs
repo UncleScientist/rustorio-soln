@@ -88,6 +88,11 @@ impl Solver {
 
         let miner = self.build_miner();
         self.iron.add_miner(&self.tick, miner);
+        let miner = self.build_miner();
+        self.iron.add_miner(&self.tick, miner);
+
+        let miner = self.build_miner();
+        self.copper.add_miner(&self.tick, miner);
 
         let steel_tech = self.steel_technology.take().expect("needed steel tech");
         let mut lab = self.generate_lab(&steel_tech);
