@@ -12,6 +12,7 @@ use rustorio::{
     },
     research::SteelTechnology,
     resources::{Copper, CopperOre, CopperWire, ElectronicCircuit, Iron, IronOre, Point},
+    territory::Miner,
 };
 
 use crate::smelter::Smeltable;
@@ -84,6 +85,9 @@ impl Solver {
             .bundle::<10>()
             .expect("can't bundle 10 iron");
         self.copper_furnace = Some(Furnace::build(&self.tick, CopperSmelting, iron));
+
+        let miner = self.build_miner();
+        self.iron.add_miner(&self.tick, miner);
 
         let steel_tech = self.steel_technology.take().expect("needed steel tech");
         let mut lab = self.generate_lab(&steel_tech);
@@ -225,10 +229,10 @@ impl Solver {
             &self.tick,
             technology,
             iron.bundle()
-                .expect("couldn't convert copper wire resource to bundle"),
+                .expect("couldn't convert iron resource to bundle"),
             copper
                 .bundle()
-                .expect("couldn't convert iron resource to bundle"),
+                .expect("couldn't convert copper resource to bundle"),
         )
     }
 
@@ -267,5 +271,18 @@ impl Solver {
             1_000_000,
         );
         electronic_circuit_assembler.outputs(&self.tick).0.empty()
+    }
+
+    fn build_miner(&mut self) -> Miner {
+        let mut iron = self
+            .iron
+            .retrieve_product(10, &mut self.tick, &mut self.iron_furnace);
+        let mut copper = self
+            .copper
+            .retrieve_product(5, &mut self.tick, &mut self.copper_furnace);
+        Miner::build(
+            iron.bundle().expect("iron"),
+            copper.bundle().expect("copper"),
+        )
     }
 }

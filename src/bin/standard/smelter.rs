@@ -5,7 +5,7 @@ use rustorio::{
     buildings::Furnace,
     recipes::{CopperSmelting, FurnaceRecipe, IronSmelting},
     resources::{Copper, CopperOre, Iron, IronOre},
-    territory::Territory,
+    territory::{Miner, Territory},
 };
 
 pub struct Smeltable<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe> {
@@ -27,12 +27,22 @@ impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe>
         }
     }
 
+    pub fn add_miner(&mut self, tick: &Tick, miner: Miner) {
+        self.territory
+            .add_miner(tick, miner)
+            .expect("couldn't add miner");
+    }
+
     pub fn retrieve_product<S: Smelter<Ore, Product, Recipe>>(
         &mut self,
         amount: u32,
         tick: &mut Tick,
         smelter: &mut Option<S>,
     ) -> Resource<Product> {
+        let ore = self.territory.resources(tick);
+        if ore.amount() > 0 {
+            ore.empty_into(&mut self.ore);
+        }
         let have = self.product.amount();
         if have < amount {
             let remaining = self.acquire_ore_resource(amount - have, tick);
@@ -47,8 +57,8 @@ impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe>
         self.territory.hand_mine::<AMOUNT>(tick)
     }
 
-    fn mine(&mut self, amount: u32, tick: &mut Tick) {
-        let mined = match amount {
+    fn mine(&mut self, amount: u32, tick: &mut Tick) -> Resource<Ore> {
+        match amount {
             1 => self.acquire_ore::<1>(tick).to_resource(),
             2 => self.acquire_ore::<2>(tick).to_resource(),
             4 => self.acquire_ore::<4>(tick).to_resource(),
@@ -57,12 +67,9 @@ impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe>
             32 => self.acquire_ore::<32>(tick).to_resource(),
             64 => self.acquire_ore::<64>(tick).to_resource(),
             128 => self.acquire_ore::<128>(tick).to_resource(),
-            x if x.is_multiple_of(2) => {
-                self.acquire_ore_resource(x / 2, tick) + self.acquire_ore_resource(x / 2, tick)
-            }
-            x => self.acquire_ore_resource(1, tick) + self.acquire_ore_resource(x - 1, tick),
-        };
-        self.ore.add(mined);
+            x if x.is_multiple_of(2) => self.mine(x / 2, tick) + self.mine(x / 2, tick),
+            x => self.mine(1, tick) + self.mine(x - 1, tick),
+        }
     }
 
     fn smelt_ore<S: Smelter<Ore, Product, Recipe>>(
@@ -79,7 +86,8 @@ impl<Ore: ResourceType, Product: ResourceType, Recipe: FurnaceRecipe>
     fn acquire_ore_resource(&mut self, amount: u32, tick: &mut Tick) -> Resource<Ore> {
         let have = self.ore.amount();
         if have < amount {
-            self.mine(amount - have, tick);
+            let mut mined = self.mine(amount - have, tick);
+            mined.empty_into(&mut self.ore);
         }
         self.ore
             .split_off(amount)
