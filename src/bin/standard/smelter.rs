@@ -103,7 +103,7 @@ where
     }
 
     fn smelt(&mut self, amount: u32, tick: &mut Tick) -> Resource<Product> {
-        tick.advance_until(|tick| self.outputs(tick).0.amount() > amount, 1_000_000);
+        tick.advance_until(|tick| self.outputs(tick).0.amount() >= amount, 1_000_000);
         self.outputs(tick).0.split_off_max(amount).into()
     }
 }
@@ -119,7 +119,7 @@ where
     }
 
     fn smelt(&mut self, amount: u32, tick: &mut Tick) -> Resource<Product> {
-        tick.advance_until(|tick| self.outputs(tick).0.amount() > amount, 1_000_000);
+        tick.advance_until(|tick| self.outputs(tick).0.amount() >= amount, 1_000_000);
         self.outputs(tick).0.split_off_max(amount).into()
     }
 }
